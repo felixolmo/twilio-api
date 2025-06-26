@@ -1,80 +1,57 @@
 const express = require('express');
 const axios = require('axios');
+const multer = require('multer');
 const FormData = require('form-data');
+const fs = require('fs');
+require('dotenv').config();
 
 const app = express();
+const port = process.env.PORT || 10000;
+
+const upload = multer({ dest: 'uploads/' });
+
 app.use(express.json());
 
-app.post('/handle-input', async (req, res) => {
-  const userSpeech = req.body.SpeechResult || '';
+// Route to handle audio file upload
+app.post('/handle_input', upload.single('audio'), async (req, res) => {
+  console.log('✅ Received request to /handle_input');
 
-  const isSpanish = /\bespañol\b/i.test(userSpeech) || /[áéíóúñ¿¡]/i.test(userSpeech);
-  const language = isSpanish ? 'es' : 'en';
-
-  const systemPrompt = language === 'es'
-    ? 'Eres Sofía, la asistente telefónica de La Teresita en Tampa. Responde de forma natural, clara y útil.'
-    : 'You are Sofia, the friendly AI phone assistant for La Teresita Restaurant in Tampa. Respond clearly, naturally, and helpfully.';
-
-  const elevenLabsVoiceId = language === 'es'
-    ? process.env.ELEVENLABS_VOICE_ES
-    : process.env.ELEVENLABS_VOICE_EN;
+  if (!req.file) {
+    return res.status(400).send('No audio file provided.');
+  }
 
   try {
-    // GPT-4o request
-    const gptResponse = await axios.post(
-      'https://api.openai.com/v1/chat/completions',
-      {
-        model: process.env.MODEL_NAME || 'gpt-4o',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userSpeech }
-        ],
-        max_tokens: 150,
-        temperature: 0.7
-      },
-      {
-        headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` }
-      }
-    );
-
-    const aiReply = gptResponse.data.choices[0].message.content.trim();
-
-    // ElevenLabs TTS request
-    const ttsResponse = await axios({
-      method: 'post',
-      url: `https://api.elevenlabs.io/v1/text-to-speech/${elevenLabsVoiceId}`,
-      headers: {
-        'xi-api-key': process.env.ELEVENLABS_API_KEY,
-        'Content-Type': 'application/json'
-      },
-      responseType: 'arraybuffer',
-      data: {
-        text: aiReply,
-        model_id: 'eleven_multilingual_v2',
-        voice_settings: { stability: 0.5, similarity_boost: 0.8 }
-      }
-    });
-
-    // Upload to Cloudinary
     const formData = new FormData();
-    formData.append('file', Buffer.from(ttsResponse.data), 'response.mp3');
+    formData.append('file', fs.createReadStream(req.file.path));
     formData.append('upload_preset', process.env.CLOUDINARY_UPLOAD_PRESET);
 
+    console.log('✅ Uploading to Cloudinary...');
+
     const cloudinaryRes = await axios.post(
-      `https://api.cloudinary.com/v1_1/${process.env.CLOUDINARY_BASE_URL}/video/upload`,
+      `https://api.cloudinary.com/v1_1/${process.env.CLOUDINARY_CLOUD_NAME}/video/upload`,
       formData,
       { headers: formData.getHeaders() }
     );
 
-    const audioUrl = cloudinaryRes.data.secure_url;
+    console.log('✅ Cloudinary upload successful:', cloudinaryRes.data);
 
-    res.json({ audioUrl, message: aiReply });
+    fs.unlinkSync(req.file.path); // Clean up local file
 
+    return res.json({
+      audio_url: cloudinaryRes.data.secure_url,
+    });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'An error occurred' });
+    console.error('Cloudinary Upload Error:', error.response?.data || error.message);
+    fs.unlinkSync(req.file.path); // Clean up local file
+    return res.status(500).send('Error uploading to Cloudinary.');
   }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+// Simple health check
+app.get('/', (req, res) => {
+  res.send('Voice AI backend is running.');
+});
+
+app.listen(port, () => {
+  console.log(`✅ Server running on port ${port}`);
+});
