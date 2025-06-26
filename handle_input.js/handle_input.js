@@ -1,44 +1,31 @@
 const express = require('express');
 const axios = require('axios');
-const multer = require('multer');
 const FormData = require('form-data');
-const dotenv = require('dotenv');
-dotenv.config();
+require('dotenv').config();
 
 const app = express();
-const upload = multer();
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 
-app.post('/handle-input', upload.none(), async (req, res) => {
+app.post('/handle-input', async (req, res) => {
   try {
-    const userSpeech = req.body.SpeechResult || '';
-
+    const userSpeech = req.body.SpeechResult || 'No speech detected';
     const isSpanish = /\bespañol\b/i.test(userSpeech) || /[áéíóúñ¿¡]/i.test(userSpeech);
     const language = isSpanish ? 'es' : 'en';
-
-    const systemPrompt = language === 'es'
-      ? 'Eres Sofía, la asistente telefónica de La Teresita en Tampa. Responde de forma natural y útil.'
-      : 'You are Sofia, the friendly AI phone assistant for La Teresita Restaurant in Tampa. Respond clearly and naturally.';
-
-    const aiReply = `You said: ${userSpeech}`;
+    const aiReply = isSpanish ? 'Tu orden fue recibida.' : 'Your order was received.';
 
     const ttsResponse = await axios({
-      method: 'post',
-      url: `https://api.elevenlabs.io/v1/text-to-speech/${language === 'es' ? process.env.ELEVENLABS_VOICE_ES : process.env.ELEVENLABS_VOICE_EN}`,
+      method: 'POST',
+      url: `https://api.elevenlabs.io/v1/text-to-speech/${isSpanish ? process.env.ELEVENLABS_VOICE_ES : process.env.ELEVENLABS_VOICE_EN}`,
       headers: {
         'xi-api-key': process.env.ELEVENLABS_API_KEY,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
       },
       responseType: 'arraybuffer',
       data: {
         text: aiReply,
         model_id: 'eleven_multilingual_v2',
-        voice_settings: {
-          stability: 0.5,
-          similarity_boost: 0.8
-        }
-      }
+        voice_settings: { stability: 0.5, similarity_boost: 0.8 },
+      },
     });
 
     const formData = new FormData();
@@ -54,7 +41,6 @@ app.post('/handle-input', upload.none(), async (req, res) => {
     const audioUrl = cloudinaryRes.data.secure_url;
 
     res.json({ audioUrl, message: aiReply });
-
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'An error occurred' });
