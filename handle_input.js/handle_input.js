@@ -1,57 +1,31 @@
 const express = require('express');
 const axios = require('axios');
 const multer = require('multer');
+const dotenv = require('dotenv');
 const FormData = require('form-data');
-const fs = require('fs');
-require('dotenv').config();
+dotenv.config();
 
 const app = express();
-const port = process.env.PORT || 10000;
-
-const upload = multer({ dest: 'uploads/' });
-
 app.use(express.json());
+const upload = multer();
 
-// Route to handle audio file upload
-app.post('/handle_input', upload.single('audio'), async (req, res) => {
-  console.log('✅ Received request to /handle_input');
+app.post('/handle-input', upload.none(), async (req, res) => {
+    try {
+        const userSpeech = req.body.SpeechResult || '';
+        
+        // Your AI + Cloudinary logic here
+        const aiReply = "Simulated AI reply for testing";  // Replace with real logic
+        
+        // Simulated Cloudinary upload for testing
+        const audioUrl = "https://res.cloudinary.com/dhsj8hypc/video/upload/sample.mp3";
 
-  if (!req.file) {
-    return res.status(400).send('No audio file provided.');
-  }
+        res.json({ audioUrl, message: aiReply });
 
-  try {
-    const formData = new FormData();
-    formData.append('file', fs.createReadStream(req.file.path));
-    formData.append('upload_preset', process.env.CLOUDINARY_UPLOAD_PRESET);
-
-    console.log('✅ Uploading to Cloudinary...');
-
-    const cloudinaryRes = await axios.post(
-      `https://api.cloudinary.com/v1_1/${process.env.CLOUDINARY_CLOUD_NAME}/video/upload`,
-      formData,
-      { headers: formData.getHeaders() }
-    );
-
-    console.log('✅ Cloudinary upload successful:', cloudinaryRes.data);
-
-    fs.unlinkSync(req.file.path); // Clean up local file
-
-    return res.json({
-      audio_url: cloudinaryRes.data.secure_url,
-    });
-  } catch (error) {
-    console.error('Cloudinary Upload Error:', error.response?.data || error.message);
-    fs.unlinkSync(req.file.path); // Clean up local file
-    return res.status(500).send('Error uploading to Cloudinary.');
-  }
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'An error occurred' });
+    }
 });
 
-// Simple health check
-app.get('/', (req, res) => {
-  res.send('Voice AI backend is running.');
-});
-
-app.listen(port, () => {
-  console.log(`✅ Server running on port ${port}`);
-});
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
